@@ -1,0 +1,12 @@
+trimesh
+torch
+torchvision
+torch_geometric
+cascadio
+python-fcl
+scipy
+meshio
+pyvista
+embreex
+pyyaml
+lark

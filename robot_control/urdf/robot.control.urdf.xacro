@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<robot name="my_robot_cell" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find robot_description)/urdf/robot_macro.xacro" />
+  <xacro:include filename="$(find ur_description)/urdf/ur.ros2_control.xacro" />
+
+  <xacro:arg name="robot_ip" default="0.0.0.0" />
+  <xacro:arg name="use_fake_hardware" default="false" />
+  <xacro:arg name="kinematics_params_file" default="$(find ur_description)/config/ur3e/default_kinematics.yaml"/>
+
+  <link name="world" />
+
+  <xacro:robot parent="world" kinematics_params_file="$(arg kinematics_params_file)" />
+  <xacro:ur_ros2_control
+    name="ur3e"
+    tf_prefix=""
+    robot_ip="$(arg robot_ip)"
+    script_filename="$(find ur_client_library)/resources/external_control.urscript"
+    output_recipe_filename="$(find ur_robot_driver)/resources/rtde_output_recipe.txt"
+    input_recipe_filename="$(find ur_robot_driver)/resources/rtde_input_recipe.txt"
+    use_fake_hardware="$(arg use_fake_hardware)"
+    mock_sensor_commands="false"
+    headless_mode="false"
+  />
+
+  <!-- If you had more controlled devices in your description, e.g. a gripper, you can add another
+  ros2_control tag here-->
+
+</robot>

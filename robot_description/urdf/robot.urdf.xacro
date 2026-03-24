@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="robot">
+
+  <xacro:arg name="robot_ip" default="0.0.0.0" />
+  <xacro:arg name="use_fake_hardware" default="false" />
+  <xacro:arg name="kinematics_params_file" default="$(find ur_description)/config/ur3e/default_kinematics.yaml" />
+  <xacro:arg name="headless_mode" default="false" />
+  <xacro:arg name="script_filename" default="$(find ur_client_library)/resources/external_control.urscript"/>
+  <xacro:arg name="output_recipe_filename" default="$(find ur_robot_driver)/resources/rtde_output_recipe.txt"/>
+  <xacro:arg name="input_recipe_filename" default="$(find ur_robot_driver)/resources/rtde_input_recipe.txt"/>
+  <xacro:arg name="fake_sensor_commands" default="false" />
+
+
+  <xacro:include filename="$(find robot_description)/urdf/robot_macro.xacro" />
+
+  <link name="world" />
+
+  <xacro:robot 
+    parent="world" 
+    kinematics_params_file="$(arg kinematics_params_file)"
+    robot_ip="$(arg robot_ip)" 
+    use_fake_hardware="$(arg use_fake_hardware)"
+    headless_mode="$(arg headless_mode)"
+    script_filename="$(arg script_filename)"
+    output_recipe_filename="$(arg output_recipe_filename)"
+    input_recipe_filename="$(arg input_recipe_filename)"
+    fake_sensor_commands="$(arg fake_sensor_commands)"
+  />
+
+</robot>
+
+  
