@@ -19,6 +19,7 @@ ros2 launch robot_control start.launch.py launch_rviz:=true robot_ip:=169.254.14
 Launch MoveIt2:
 ```bash
 ros2 launch robot_moveit_config move_group.launch.py
+ros2 launch robot_moveit_config robot_moveit.launch.py
 ```
 
 Launch MoveIt2 planning GUI:
@@ -58,9 +59,9 @@ ros2 run planner planner.py
 ```
 
 # TODO:
-- [ ] Implement gripper control
+- [x] Implement gripper control
 - [ ] Check force control mode with sensor logging
-- [ ] Modify planner to output one wrench per grasp
+- [x] Modify planner to output one wrench per grasp
 
 # Log
 - 2026-03-09: FastDDS broke down after disabling firewall. Switching to CycloneDDS (added to ~/.bashrc).

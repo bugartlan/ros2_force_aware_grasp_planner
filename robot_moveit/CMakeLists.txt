@@ -44,7 +44,7 @@ target_include_directories(ik PRIVATE include)
 ament_target_dependencies(ik ${DEPENDENCIES})
 install(TARGETS ik DESTINATION lib/${PROJECT_NAME})
 
-add_executable(task src/task.cpp src/task_executor.cpp)
+add_executable(task src/task.cpp src/task_executor.cpp src/task_executor_utils.cpp)
 target_include_directories(task PRIVATE include)
 ament_target_dependencies(task ${DEPENDENCIES})
 target_link_libraries(task tf2_geometry_msgs::tf2_geometry_msgs)

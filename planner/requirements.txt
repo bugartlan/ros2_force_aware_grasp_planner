@@ -10,3 +10,4 @@ pyvista
 embreex
 pyyaml
 lark
+rtree

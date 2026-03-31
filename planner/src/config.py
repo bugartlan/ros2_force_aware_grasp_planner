@@ -7,14 +7,29 @@ from ament_index_python import get_package_share_directory
 @dataclass(frozen=True)
 class BoxFinger:
     # Closing direction is along the x-axis and the normal is along the z-axis
-    width: float = 0.062
-    height: float = 0.146
+    width: float = 0.021
+    height: float = 0.0455
     depth: float = 0.008
+    offset: float = 0.101
     mesh: trimesh.Trimesh = None
 
     def __post_init__(self):
         mesh = trimesh.creation.box(extents=(self.depth, self.width, self.height))
+        mesh.apply_translation((0, 0, self.height / 2 + self.offset))
+        mesh.visual.face_colors = [64, 255, 128, 128]
+        object.__setattr__(self, "mesh", mesh)
+
+
+@dataclass(frozen=True)
+class CylinderBody:
+    radius: float = 0.031
+    height: float = 0.1005
+    mesh: trimesh.Trimesh = None
+
+    def __post_init__(self):
+        mesh = trimesh.creation.cylinder(radius=0.031, height=0.1005)
         mesh.apply_translation((0, 0, self.height / 2))
+        mesh.visual.face_colors = [64, 0, 128, 128]
         object.__setattr__(self, "mesh", mesh)
 
 
@@ -30,6 +45,7 @@ class ROBOTIQ_HANDE_GRIPPER:
 
     box_finger_left: BoxFinger = BoxFinger()
     box_finger_right: BoxFinger = BoxFinger()
+    cylinder_body: CylinderBody = CylinderBody()
 
     def show(self, viewer="gl"):
         scene = trimesh.Scene()
@@ -53,4 +69,5 @@ class ROBOTIQ_HANDE_GRIPPER:
         scene.add_geometry(ax)
         scene.add_geometry(self.box_finger_left.mesh, transform=left_tf)
         scene.add_geometry(self.box_finger_right.mesh, transform=right_tf)
+        scene.add_geometry(self.cylinder_body.mesh)
         scene.show(viewer=viewer)

@@ -31,6 +31,7 @@ class Grasp:
     width: float
     c1: Contact
     c2: Contact
-    # f1: np.ndarray = np.zeros(3)
-    # f2: np.ndarray = np.zeros(3)
     wrench: np.ndarray = None
+
+    def __str__(self):
+        return f"Grasp(pose={self.pose}, width={self.width:.3f}, c1={self.c1}, c2={self.c2}, wrench={self.wrench})"

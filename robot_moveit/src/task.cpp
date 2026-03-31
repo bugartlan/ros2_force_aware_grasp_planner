@@ -10,7 +10,7 @@ int main(int argc, char *argv[]) {
   options.parameter_overrides({
       rclcpp::Parameter("force_duration_sec", 5.0),
       rclcpp::Parameter("force_magnitude", 10.0),
-      rclcpp::Parameter("motion_timeout_sec", 15.0),
+      rclcpp::Parameter("motion_timeout_sec", 20.0),
       rclcpp::Parameter("base_link", "base_link"),
       rclcpp::Parameter(
           "tf_base_to_object",

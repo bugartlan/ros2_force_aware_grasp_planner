@@ -126,25 +126,25 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
         y0 = np.zeros((num_nodes, 4))  # dummy node features
 
         sampler = GraspSampler(mesh, self.gripper, mu)
-        grasps = sampler.sample(n_samples=1000)
-        if not grasps:
+        candidates = sampler.sample(n_samples=100)
+        if not candidates:
             print("No valid grasps found!")
             return None
 
         # Build graph and predict scores for each grasp
         grasps = []
-        for grasp in grasps:
+        for g in candidates:
             # Sample wrenches
             wrenches = sample_wrenches(k, force_scale=1.0, torque_scale=0.1)
 
-            pos1 = grasp.c1.pos - pos_com
-            pos2 = grasp.c2.pos - pos_com
+            pos1 = g.c1.pos - pos_com
+            pos2 = g.c2.pos - pos_com
 
             best_wrench = None
             best_score = 0.0
             for wrench in wrenches:
                 f1, f2 = wrench_to_contact_forces(wrench, pos1, pos2)
-                grip = 0.1 * (pos1 - pos2) / grasp.width
+                grip = 0.1 * (pos1 - pos2) / g.width
                 contacts = [(pos1, f1 - grip / 2), (pos2, f2 + grip / 2)]
                 graph = self.builder.build(msh, y0, contacts).to(self.device)
                 y_pred = self.model(self.normalizer.normalize(graph))
@@ -156,8 +156,7 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
             grasps.append(
                 (
                     best_score,
-                    Grasp(grasp.pose, grasp.width, grasp.c1, grasp.c2, best_wrench),
+                    Grasp(g.pose, g.width, g.c1, g.c2, best_wrench),
                 )
             )
-
         return [grasp for _, grasp in sorted(grasps, key=lambda x: x[0], reverse=True)]

@@ -7,7 +7,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 
-install(PROGRAMS src/planner.py src/GraspOptimizer.py src/grasp.py
+install(PROGRAMS src/planner.py src/dummy.py src/GraspOptimizer.py src/grasp.py
                  src/optimizer.py src/config.py src/sampler.py
         DESTINATION lib/${PROJECT_NAME})
 

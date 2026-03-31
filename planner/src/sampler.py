@@ -20,6 +20,9 @@ class GraspSampler:
         self.collision_manager.add_object(
             "right_finger", self.gripper.box_finger_right.mesh
         )
+        self.collision_manager.add_object(
+            "cylinder_body", self.gripper.cylinder_body.mesh
+        )
 
     def _make_floor(self, epsilon=1e-4):
         plane = trimesh.Trimesh(
@@ -34,11 +37,11 @@ class GraspSampler:
         return plane
 
     def sample(self, n_samples, debug=False):
-        grasps = self.sample_antipodal_points(n_samples)
+        grasps = self.sample_antipodal_points(n_samples, debug=debug)
         valid_grasps = []
         print(f"Sampled {len(grasps)} antipodal grasps, checking for collisions...")
         for grasp in grasps:
-            poses = self.sample_poses(grasp.c1, grasp.c2)
+            poses = self.sample_poses(grasp.c1, grasp.c2, k=12)
             for pose in poses:
                 if debug:
                     self.visualize_grasp(Grasp(pose, grasp.width, grasp.c1, grasp.c2))
@@ -49,44 +52,50 @@ class GraspSampler:
         print(f"{len(valid_grasps)} valid grasps found after collision checking.")
         return valid_grasps
 
-    def sample_antipodal_points(self, n_samples, eps=1e-3):
+    def sample_antipodal_points(self, n_samples, eps=1e-4, debug=False):
         # Sample points + face ids from the mesh
         pts, face_ids = self.mesh.sample(n_samples, return_index=True)
-        mask = pts[:, 2] > 0.005  # Filter out points that are too close to the floor
+        mask = pts[:, 2] > 0.01  # Filter out points that are too close to the floor
         pts = pts[mask]
         face_ids = face_ids[mask]
         n1 = self.mesh.face_normals[face_ids]
 
-        intersector = trimesh.ray.ray_pyembree.RayMeshIntersector(self.mesh)
+        directions = -n1  # rays shoot inward along negative normal
+        origins = pts + eps * directions
+
+        intersector = trimesh.ray.ray_triangle.RayMeshIntersector(self.mesh)
+        locs, index_ray, index_tri = intersector.intersects_location(
+            origins, directions, multiple_hits=True
+        )
 
         cos_theta = 1.0 / np.sqrt(1.0 + self.mu * self.mu)
-
         grasps = []
-        for p, n in zip(pts, n1):
-            d = -n  # direction shoots inward along negative normal
-            origins = (p + eps * d).reshape(1, 3)
-            directions = d.reshape(1, 3)
 
-            locations, index_ray, index_tri = intersector.intersects_location(
-                origins, directions, multiple_hits=True
+        for idx in np.unique(index_ray):
+            mask = index_ray == idx
+            qs = locs[mask][::2]  # Check every other hit
+            tris = index_tri[mask][::2]
+
+            p, n = pts[idx], n1[idx]
+            dists = np.linalg.norm(qs - p, axis=1)
+            ms = self.mesh.face_normals[tris]
+
+            disp = (qs - p) / dists[:, None]
+            inner_product = np.einsum("ij,ij->i", ms, disp)
+            valid = (
+                (dists >= self.gripper.min_width)
+                & (dists <= self.gripper.max_width)
+                & (inner_product >= cos_theta)
             )
-
-            if len(locations) == 0:
-                continue
-
-            for q in locations[::2]:  # Check every other hit
-                q = locations[0]
-                width = np.linalg.norm(q - p)
-                if width < self.gripper.min_width or width > self.gripper.max_width:
-                    continue
-
-                m = self.mesh.face_normals[face_ids[0]]
-                x = (q - p) / width
-                # Check if the angle between the normal and the approach vector is within the friction cone
-                if np.dot(m, -x) >= cos_theta:
-                    c1 = Contact(pos=p, normal=n, mu=self.mu)
-                    c2 = Contact(pos=q, normal=x, mu=self.mu)
-                    grasps.append(Grasp(None, width, c1, c2))
+            for q, d, m in zip(qs[valid], dists[valid], ms[valid]):
+                grasps.append(
+                    Grasp(
+                        None,
+                        d,
+                        Contact(pos=p, normal=n, mu=self.mu),
+                        Contact(pos=q, normal=m, mu=self.mu),
+                    )
+                )
 
         return grasps
 
@@ -98,6 +107,7 @@ class GraspSampler:
 
         self.collision_manager.set_transform("left_finger", tf @ left_offset)
         self.collision_manager.set_transform("right_finger", tf @ right_offset)
+        self.collision_manager.set_transform("cylinder_body", tf)
 
         collision = self.collision_manager.in_collision_internal()
         return collision
@@ -151,14 +161,13 @@ class GraspSampler:
         right_offset = trimesh.transformations.translation_matrix([half, 0, 0])
 
         tf = grasp.pose.se3()
-        self.gripper.box_finger_left.mesh.visual.face_colors = [64, 255, 128, 128]
-        self.gripper.box_finger_right.mesh.visual.face_colors = [64, 255, 128, 128]
         scene.add_geometry(
             self.gripper.box_finger_left.mesh, transform=tf @ left_offset
         )
         scene.add_geometry(
             self.gripper.box_finger_right.mesh, transform=tf @ right_offset
         )
+        scene.add_geometry(self.gripper.cylinder_body.mesh, transform=tf)
 
         # Visualize contact points
         c1_sphere = trimesh.creation.uv_sphere(radius=0.0025)

@@ -50,6 +50,13 @@ def generate_launch_description():
             description="Path to the kinematics parameters file.",
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "show_object",
+            default_value="false",
+            description="Whether to show the object mesh in RViz.",
+        )
+    )
 
     rviz_config_file = PathJoinSubstitution(
         [
