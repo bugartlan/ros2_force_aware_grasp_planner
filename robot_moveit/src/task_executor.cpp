@@ -114,7 +114,7 @@ void TaskExecutor::init() {
       "package://rviz_mesh_publisher/meshes/Bushing3.stl",
       task_executor_utils::transformToPoseMsg(tf_base_to_object_),
       move_group_interface_->getPlanningFrame());
-  RCLCPP_INFO(get_logger(), "Initialization complete, ready to execute tasks");
+  RCLCPP_INFO(get_logger(), "Initialization complete.");
 
   transitionTo(State::STARTUP);
 }
@@ -128,6 +128,9 @@ void TaskExecutor::transitionTo(State next_state) {
   switch (state_) {
   case State::STARTUP:
     onStartup();
+    break;
+  case State::READY:
+    onReady();
     break;
   case State::PREGRASP:
     onPregrasp();
@@ -155,6 +158,8 @@ std::string TaskExecutor::stateToString(State s) {
     return "IDLE";
   case State::STARTUP:
     return "STARTUP";
+  case State::READY:
+    return "READY";
   case State::PREGRASP:
     return "PREGRASP";
   case State::GRASPING:
@@ -208,31 +213,27 @@ void TaskExecutor::onStartup() {
       {"scaled_joint_trajectory_controller"},
       {"force_mode_controller", "joint_trajectory_controller"}, [this]() {
         returnHome();
-        RCLCPP_INFO(get_logger(),
-                    "Initialization complete, ready to execute tasks");
+        RCLCPP_INFO(get_logger(), "Startup complete, ready to execute tasks");
+        transitionTo(State::READY);
       });
+}
+
+void TaskExecutor::onReady() {
+  RCLCPP_INFO(get_logger(), "Robot is in READY state.");
+  if (grasps_received_) {
+    RCLCPP_INFO(get_logger(), "Grasp data already available.");
+    std::thread([this]() { findValidGrasp(); }).detach();
+  } else {
+    RCLCPP_INFO(get_logger(), "No grasp data yet. Waiting ...");
+  }
 }
 
 void TaskExecutor::onPregrasp() {
   // Add collision object to the scene
   planning_scene_interface->applyCollisionObject(collision_object_);
 
-  // // Log current joint values for debugging
-  // auto current_state = *move_group_interface_->getCurrentState();
-  // auto current_joint_values = getCurrentJointValues();
-  // current_state.setJointGroupPositions(joint_model_group_,
-  //                                      current_joint_values);
-
-  // current_state.copyJointGroupPositions(
-  //     current_state.getJointModelGroup(kGroupName), current_joint_values);
-  // RCLCPP_INFO(get_logger(),
-  //             "Current joint values: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
-  //             current_joint_values[0], current_joint_values[1],
-  //             current_joint_values[2], current_joint_values[3],
-  //             current_joint_values[4], current_joint_values[5]);
-
   RCLCPP_INFO(get_logger(), "Moving to pregrasp position...");
-  visualizePose(pregrasp_joint_values_);
+  visualizePose(pregrasp_joint_values_, "Pregrasp_Pose");
 
   move_group_interface_->setStartStateToCurrentState();
   // move_group_interface_->setStartState(current_state);
@@ -318,6 +319,12 @@ void TaskExecutor::onForce() {
   }
 
   RCLCPP_INFO(get_logger(), "Applying wrench");
+  RCLCPP_INFO(get_logger(),
+              "Wrench - force: [%.2f, %.2f, %.2f] torque: [%.2f, "
+              "%.2f, %.2f]",
+              target_wrench_.force.x, target_wrench_.force.y,
+              target_wrench_.force.z, target_wrench_.torque.x,
+              target_wrench_.torque.y, target_wrench_.torque.z);
   auto request = std::make_shared<SetForceMode::Request>();
   request->task_frame.header.frame_id =
       this->get_parameter("base_link").as_string();
@@ -330,13 +337,15 @@ void TaskExecutor::onForce() {
   request->selection_vector_ry = 1;
   request->selection_vector_rz = 1;
   request->wrench = target_wrench_;
-  request->type = SetForceMode::Request::NO_TRANSFORM;
+  // request->type = SetForceMode::Request::NO_TRANSFORM;
   request->speed_limits.linear.x = 0.1;
   request->speed_limits.linear.y = 0.1;
   request->speed_limits.linear.z = 0.1;
   request->speed_limits.angular.x = 0.1;
   request->speed_limits.angular.y = 0.1;
   request->speed_limits.angular.z = 0.1;
+
+  RCLCPP_INFO(get_logger(), "Sending force mode start request...");
   force_start_client_->async_send_request(
       request, [this](rclcpp::Client<SetForceMode>::SharedFuture future) {
         try {
@@ -422,11 +431,18 @@ void TaskExecutor::switchControllers(const std::vector<std::string> &activate,
 
 void TaskExecutor::graspArrayCallback(
     const grasp_interfaces::msg::GraspArray::SharedPtr msg) {
-  target_grasps_ = *msg;
-  grasps_received_ = true;
-  RCLCPP_INFO(get_logger(), "Received %lu target grasps from planner",
-              static_cast<unsigned long>(target_grasps_.grasps.size()));
-  std::thread([this]() { findValidGrasp(); }).detach();
+  if (!grasps_received_) {
+    RCLCPP_INFO(get_logger(), "Received grasp array with %lu grasps",
+                msg->grasps.size());
+    grasps_received_ = true;
+    target_grasps_ = *msg;
+    if (state_ == State::READY) {
+      std::thread([this]() {
+        findValidGrasp();
+        grasps_received_ = false;
+      }).detach();
+    }
+  }
 }
 
 bool TaskExecutor::isValid(const geometry_msgs::msg::Pose &pose,
@@ -533,39 +549,38 @@ bool TaskExecutor::computePregrasp(const geometry_msgs::msg::Pose &pose) {
 }
 
 void TaskExecutor::findValidGrasp() {
-  if (grasps_received_) {
-    grasps_received_ = false;
+  if (busy_ || state_ != State::READY)
+    return;
 
-    bool found_feasible_grasp = false;
-    for (auto &grasp : target_grasps_.grasps) {
-      auto pose = task_executor_utils::applyWorldTransformToPose(
-          grasp.pose, tf_base_to_object_);
-      RCLCPP_INFO(get_logger(),
-                  "Grasp - position: [%.3f, %.3f, %.3f] orientation: [%.3f, "
-                  "%.3f, %.3f, %.3f]",
-                  pose.position.x, pose.position.y, pose.position.z,
-                  pose.orientation.x, pose.orientation.y, pose.orientation.z,
-                  pose.orientation.w);
+  busy_ = true;
+  for (auto &grasp : target_grasps_.grasps) {
+    auto pose = task_executor_utils::applyWorldTransformToPose(
+        grasp.pose, tf_base_to_object_);
+    RCLCPP_INFO(get_logger(),
+                "Grasp - position: [%.3f, %.3f, %.3f] orientation: [%.3f, "
+                "%.3f, %.3f, %.3f]",
+                pose.position.x, pose.position.y, pose.position.z,
+                pose.orientation.x, pose.orientation.y, pose.orientation.z,
+                pose.orientation.w);
 
-      if (isValid(pose, 10)) {
-        target_pose_ = pose;
-        target_wrench_ = grasp.wrench;
-        found_feasible_grasp = true;
-        visualizePose(target_joint_values_);
-        break;
-      }
-      RCLCPP_WARN(get_logger(), "-> Grasp is invalid. Skipping.");
-    }
-    if (!found_feasible_grasp) {
-      RCLCPP_ERROR(get_logger(), "No feasible grasp found.");
-      transitionTo(State::ERROR);
-    } else {
+    if (isValid(pose, 10)) {
+      target_pose_ = pose;
+      target_wrench_ = grasp.wrench;
+      visualizePose(target_joint_values_, "Target_Grasp_Pose");
       transitionTo(State::PREGRASP);
+      busy_ = false;
+      return;
     }
+    RCLCPP_WARN(get_logger(), "-> Grasp is invalid. Skipping.");
   }
+
+  busy_ = false;
+  RCLCPP_ERROR(get_logger(), "No feasible grasp found.");
+  transitionTo(State::ERROR);
 }
 
-void TaskExecutor::visualizePose(const std::vector<double> &joint_values) {
+void TaskExecutor::visualizePose(const std::vector<double> &joint_values,
+                                 const std::string &text) {
   RCLCPP_INFO(get_logger(), "Visualizing pose...");
   RCLCPP_INFO(get_logger(),
               "Joint values: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
@@ -578,6 +593,14 @@ void TaskExecutor::visualizePose(const std::vector<double> &joint_values) {
   goal_state->setJointGroupPositions(
       goal_state->getJointModelGroup("ur_manipulator"), joint_values);
   moveit_visual_tools_->publishRobotState(goal_state, rviz_visual_tools::GREEN);
+
+  if (!text.empty()) {
+    auto text_pose = Eigen::Isometry3d::Identity();
+    text_pose.translation().z() = 0.5;
+    moveit_visual_tools_->publishText(text_pose, text, rviz_visual_tools::BLUE,
+                                      rviz_visual_tools::XLARGE);
+  }
+
   moveit_visual_tools_->trigger();
   moveit_visual_tools_->prompt("Press 'Next' to continue.");
 }
@@ -609,7 +632,8 @@ std::vector<double> TaskExecutor::getCurrentJointValues() {
   std::vector<double> joint_values;
   current_state->copyJointGroupPositions(joint_model_group_, joint_values);
   for (size_t i = 0; i < joint_values.size(); ++i) {
-    // RCLCPP_INFO(get_logger(), "Raw joint value %lu: %.3f", i, joint_values[i]);
+    // RCLCPP_INFO(get_logger(), "Raw joint value %lu: %.3f", i,
+    // joint_values[i]);
     joint_values[i] =
         std::fmod(std::fmod(joint_values[i], 2 * M_PI) + M_PI, 2 * M_PI) - M_PI;
     // RCLCPP_INFO(get_logger(), "Clipped joint value %lu: %.3f", i,

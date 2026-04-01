@@ -32,11 +32,15 @@ class GraspPlannerNode(Node):
 
         self.package = get_package_share_directory("planner")
         self.checkpoint_path = os.path.join(
-            self.package, "assets", "checkpoints", "Mix250_all_w.pth"
+            self.package, "assets", "checkpoints", "Model0.pth"
         )
 
         self.group = "ur_manipulator"
         self.singularity_threshold = 0.01
+
+        # Mode: 0 = force only, 1 = torque only, 2 = full wrench
+        self.declare_parameter("mode", 0)
+        self.get_logger().info(f"Mode: {self.get_parameter('mode').value}")
 
         self.get_logger().info("Grasp Planner Node initialized.")
 
@@ -87,7 +91,7 @@ class GraspPlannerNode(Node):
         array_msg.header.stamp = self.get_clock().now().to_msg()
         array_msg.header.frame_id = self.object_frame_id
 
-        for grasp in grasps:
+        for score, grasp in grasps:
             g = Grasp()
 
             # Pack Pose
@@ -98,6 +102,7 @@ class GraspPlannerNode(Node):
             g.pose.orientation.y = float(grasp.pose.quat[1])
             g.pose.orientation.z = float(grasp.pose.quat[2])
             g.pose.orientation.w = float(grasp.pose.quat[3])
+            g.score = score
 
             # Pack Wrench
             if grasp.wrench is not None:
@@ -160,46 +165,11 @@ class GraspPlannerNode(Node):
         self.get_logger().info("Target wrench published successfully.")
 
 
-class DummyGraspPublisher(Node):
-    def __init__(self):
-        super().__init__("dummy_grasp_publisher")
-        self.grasp_array_pub = self.create_publisher(GraspArray, "target_grasps", 10)
-
-        g = Grasp()
-        g.pose.position.x = float(-0.047)
-        g.pose.position.y = float(0.119)
-        g.pose.position.z = float(0.097)
-        g.pose.orientation.x = float(0.851)
-        g.pose.orientation.y = float(0.160)
-        g.pose.orientation.z = float(0.092)
-        g.pose.orientation.w = float(0.491)
-        g.wrench.force.x = float(0.0)
-        g.wrench.force.y = float(0.0)
-        g.wrench.force.z = float(1.0)
-        g.wrench.torque.x = float(0.0)
-        g.wrench.torque.y = float(0.0)
-        g.wrench.torque.z = float(0.0)
-        self.grasp = g
-
-        # Create a timer to publish the grasp continuously at 10 Hz
-        # self.timer = self.create_timer(0.1, self.publish_grasp)
-
-    def publish_grasp(self):
-        array_msg = GraspArray()
-        array_msg.header.stamp = self.get_clock().now().to_msg()
-        array_msg.header.frame_id = "object_frame"
-        array_msg.grasps.append(self.grasp)
-        self.grasp_array_pub.publish(array_msg)
-
-
 def main(args=None):
 
     rclpy.init(args=args)
-    # node = GraspPlannerNode()
-    # node.optimize_grasp()
-
-    node = DummyGraspPublisher()
-    node.publish_grasp()
+    node = GraspPlannerNode()
+    node.optimize_grasp()
 
     try:
         rclpy.spin(node)

@@ -5,10 +5,13 @@ from scipy.spatial.transform import Rotation as R
 
 
 class GraspSampler:
-    def __init__(self, mesh, gripper, mu):
+    def __init__(self, mesh, gripper, mu, seed=42):
         self.mesh = mesh
         self.gripper = gripper
         self.mu = mu
+
+        self.seed = seed
+        self.rng = np.random.default_rng(seed)
 
         # Initialize collision manager for the mesh
         self.collision_manager = trimesh.collision.CollisionManager()

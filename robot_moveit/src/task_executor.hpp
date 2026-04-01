@@ -18,7 +18,7 @@
 enum class State {
   IDLE,
   STARTUP,
-  MOVING,
+  READY,
   PREGRASP,
   GRASPING,
   FORCE,
@@ -45,7 +45,7 @@ private:
   std::string stateToString(State s);
   void returnHome();
   void onStartup();
-  void onMoving();
+  void onReady();
   void onPregrasp();
   void onGrasping();
   void onForce();
@@ -62,7 +62,8 @@ private:
   shape_msgs::msg::Mesh loadObjectMesh(const std::string &path);
   void visualizePose(const geometry_msgs::msg::Pose &pose,
                      const std::string &id);
-  void visualizePose(const std::vector<double> &joint_values);
+  void visualizePose(const std::vector<double> &joint_values,
+                     const std::string &text = "");
   void openGripper();
   void closeGripper();
   void findValidGrasp();
@@ -84,6 +85,7 @@ private:
   bool pose_received_{false};
   bool wrench_received_{false};
   bool grasps_received_{false};
+  bool busy_{false};
 
   // Transformation: [x, y, z, qx, qy, qz, qw]
   tf2::Transform tf_base_to_object_;

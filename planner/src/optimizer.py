@@ -52,7 +52,7 @@ def wrench_to_contact_forces(
 
 
 def sample_wrenches(
-    k: int, force_scale: float = 1.0, torque_scale: float = 1.0
+    k: int, force_scale: float = 1.0, torque_scale: float = 1.0, rng=None
 ) -> np.ndarray:
     """Sample k unit wrenches uniformly on the 6D wrench sphere.
 
@@ -64,12 +64,15 @@ def sample_wrenches(
         k:             Number of wrenches to sample.
         force_scale:   Characteristic force magnitude (e.g. object weight in N).
         torque_scale:  Characteristic torque magnitude (e.g. force * moment arm).
+        rng:           Optional random number generator for reproducibility.
 
     Returns:
         (k, 6) array of wrenches [fx, fy, fz, tx, ty, tz], each with unit norm
         in the scaled sense.
     """
-    w = np.random.randn(k, 6)
+    if rng is None:
+        rng = np.random.default_rng()
+    w = rng.uniform(low=-1.0, high=1.0, size=(k, 6))
     w[:, :3] *= force_scale
     w[:, 3:] *= torque_scale
     w /= np.linalg.norm(w, axis=1, keepdims=True)
@@ -102,21 +105,25 @@ class HeuristicBasedGraspOptimizer(GraspOptimizer):
 
 
 class GNNBasedGraspOptimizer(GraspOptimizer):
-    def __init__(self, gripper, model, normalizer, device="cpu"):
+    def __init__(self, gripper, model, normalizer, device="cpu", seed=42):
         super().__init__(gripper)
         self.model = model
         self.normalizer = normalizer
         self.builder = GraphBuilderVirtual()
         self.device = device
+        self.seed = seed
         self.epsilon = 1e-4  # small tolerance for bottom stress extraction
 
-    def optimize(self, msh, mu, k=20):
+        self.rng = np.random.default_rng(seed)
+
+    def optimize(self, msh, mu, k=20, mode=0):
         """Sample grasps, build graphs, and predict scores to find the best grasp.
 
         Args:
             msh: Trimesh mesh of the object to grasp.
             mu: Friction coefficient for grasp sampling.
             k: Number of wrenches to sample per grasp.
+            mode: 0 = force only, 1 = torque only, 2 = full wrench
         Returns:
             best_grasp: Grasp with the highest predicted score, or None if no valid grasps found.
         """
@@ -125,17 +132,22 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
         num_nodes = msh.points.shape[0]
         y0 = np.zeros((num_nodes, 4))  # dummy node features
 
-        sampler = GraspSampler(mesh, self.gripper, mu)
+        sampler = GraspSampler(mesh, self.gripper, mu, seed=self.seed)
         candidates = sampler.sample(n_samples=100)
         if not candidates:
             print("No valid grasps found!")
             return None
 
+        force_scale = 1.0 if mode in [0, 2] else 0.0
+        torque_scale = 1.0 if mode in [1, 2] else 0.0
+
         # Build graph and predict scores for each grasp
         grasps = []
         for g in candidates:
             # Sample wrenches
-            wrenches = sample_wrenches(k, force_scale=1.0, torque_scale=0.1)
+            wrenches = sample_wrenches(
+                k, force_scale=force_scale, torque_scale=torque_scale
+            )
 
             pos1 = g.c1.pos - pos_com
             pos2 = g.c2.pos - pos_com
@@ -159,4 +171,4 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
                     Grasp(g.pose, g.width, g.c1, g.c2, best_wrench),
                 )
             )
-        return [grasp for _, grasp in sorted(grasps, key=lambda x: x[0], reverse=True)]
+        return sorted(grasps, key=lambda x: x[0], reverse=True)
