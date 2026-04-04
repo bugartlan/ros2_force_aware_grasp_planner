@@ -3,6 +3,6 @@ project(robot_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch rviz urdf DESTINATION share/${PROJECT_NAME}/)
+install(DIRECTORY launch rviz urdf config DESTINATION share/${PROJECT_NAME}/)
 
 ament_package()

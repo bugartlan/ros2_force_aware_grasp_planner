@@ -47,7 +47,7 @@ class GraspPlannerNode(Node):
     def optimize_grasp(self):
         self.get_logger().info("Starting grasp optimization...")
 
-        msh_path = os.path.join(self.package, "assets", "meshes", "Bushing3_cg1.msh")
+        msh_path = os.path.join(self.package, "assets", "meshes", "L-Bracket4_cg1.msh")
 
         msh = meshio.read(msh_path)
         gripper = ROBOTIQ_HANDE_GRIPPER()
@@ -77,7 +77,7 @@ class GraspPlannerNode(Node):
         model.eval()
 
         optimizer = GNNBasedGraspOptimizer(gripper, model, normalizer, device=device)
-        grasps = optimizer.optimize(msh, mu=0.01, k=10)
+        grasps = optimizer.optimize(msh, mu=0.01, k=100)
 
         if grasps:
             self.get_logger().info(f"{len(grasps)} valid grasps found!")

@@ -191,6 +191,7 @@ void TaskExecutor::openGripper() {
   auto gripper_request = std::make_shared<std_srvs::srv::SetBool::Request>();
   gripper_request->data = true; // Open gripper
   gripper_client_->async_send_request(gripper_request);
+  rclcpp::sleep_for(std::chrono::milliseconds(1000));
 }
 
 void TaskExecutor::closeGripper() {
@@ -203,6 +204,7 @@ void TaskExecutor::closeGripper() {
   auto gripper_request = std::make_shared<std_srvs::srv::SetBool::Request>();
   gripper_request->data = false; // Close gripper
   gripper_client_->async_send_request(gripper_request);
+  rclcpp::sleep_for(std::chrono::milliseconds(1000));
 }
 
 void TaskExecutor::onStartup() {
@@ -231,7 +233,13 @@ void TaskExecutor::onReady() {
 void TaskExecutor::onPregrasp() {
   // Add collision object to the scene
   planning_scene_interface->applyCollisionObject(collision_object_);
-
+  RCLCPP_INFO(
+      get_logger(),
+      "\033[1;34mTarget grasp - position: [%.3f, %.3f, %.3f] orientation: [%.3f, "
+      "%.3f, %.3f, %.3f]\033[0m",
+      target_pose_.position.x, target_pose_.position.y, target_pose_.position.z,
+      target_pose_.orientation.x, target_pose_.orientation.y,
+      target_pose_.orientation.z, target_pose_.orientation.w);
   RCLCPP_INFO(get_logger(), "Moving to pregrasp position...");
   visualizePose(pregrasp_joint_values_, "Pregrasp_Pose");
 
@@ -320,8 +328,8 @@ void TaskExecutor::onForce() {
 
   RCLCPP_INFO(get_logger(), "Applying wrench");
   RCLCPP_INFO(get_logger(),
-              "Wrench - force: [%.2f, %.2f, %.2f] torque: [%.2f, "
-              "%.2f, %.2f]",
+              "\033[1;34mWrench - force: [%.2f, %.2f, %.2f] torque: [%.2f, "
+              "%.2f, %.2f]\033[0m",
               target_wrench_.force.x, target_wrench_.force.y,
               target_wrench_.force.z, target_wrench_.torque.x,
               target_wrench_.torque.y, target_wrench_.torque.z);
@@ -333,9 +341,9 @@ void TaskExecutor::onForce() {
   request->selection_vector_x = 1;
   request->selection_vector_y = 1;
   request->selection_vector_z = 1;
-  request->selection_vector_rx = 1;
-  request->selection_vector_ry = 1;
-  request->selection_vector_rz = 1;
+  request->selection_vector_rx = 0;
+  request->selection_vector_ry = 0;
+  request->selection_vector_rz = 0;
   request->wrench = target_wrench_;
   // request->type = SetForceMode::Request::NO_TRANSFORM;
   request->speed_limits.linear.x = 0.1;
@@ -357,6 +365,8 @@ void TaskExecutor::onForce() {
                 std::chrono::milliseconds(kWrenchPublishIntervalMs), [this]() {
                   geometry_msgs::msg::WrenchStamped msg;
                   msg.header.stamp = this->now();
+                  msg.header.frame_id =
+                      this->get_parameter("base_link").as_string();
                   msg.wrench = target_wrench_;
                   wrench_pub_->publish(msg);
                 });
@@ -371,8 +381,26 @@ void TaskExecutor::onForce() {
                   if (wrench_timer_)
                     wrench_timer_->cancel();
                   force_stop_client_->async_send_request(
-                      std::make_shared<Trigger::Request>());
-                  transitionTo(State::DONE);
+                      std::make_shared<Trigger::Request>(),
+                      [this](rclcpp::Client<Trigger>::SharedFuture future) {
+                        try {
+                          auto response = future.get();
+                          if (response->success) {
+                            RCLCPP_INFO(this->get_logger(),
+                                        "Force mode successfully stopped.");
+                            transitionTo(State::DONE);
+                          } else {
+                            RCLCPP_ERROR(this->get_logger(),
+                                         "Failed to stop force mode.");
+                            transitionTo(State::ERROR);
+                          }
+                        } catch (const std::exception &e) {
+                          RCLCPP_ERROR(this->get_logger(),
+                                       "Stop service call failed: %s",
+                                       e.what());
+                          transitionTo(State::ERROR);
+                        }
+                      });
                 });
           } else {
             RCLCPP_ERROR(this->get_logger(), "Failed to start force mode");
@@ -425,6 +453,7 @@ void TaskExecutor::switchControllers(const std::vector<std::string> &activate,
           }
         } catch (const std::exception &e) {
           RCLCPP_ERROR(this->get_logger(), "Service call failed: %s", e.what());
+          transitionTo(State::ERROR);
         }
       });
 }
@@ -566,6 +595,8 @@ void TaskExecutor::findValidGrasp() {
     if (isValid(pose, 10)) {
       target_pose_ = pose;
       target_wrench_ = grasp.wrench;
+      RCLCPP_INFO(get_logger(), "\033[1;34mGrasp score: %.2f\033[0m",
+                  grasp.score);
       visualizePose(target_joint_values_, "Target_Grasp_Pose");
       transitionTo(State::PREGRASP);
       busy_ = false;

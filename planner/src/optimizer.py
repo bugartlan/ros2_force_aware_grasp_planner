@@ -73,6 +73,7 @@ def sample_wrenches(
     if rng is None:
         rng = np.random.default_rng()
     w = rng.uniform(low=-1.0, high=1.0, size=(k, 6))
+    w[:, 2] = np.abs(w[:, 2])  # ensure positive upward force
     w[:, :3] *= force_scale
     w[:, 3:] *= torque_scale
     w /= np.linalg.norm(w, axis=1, keepdims=True)
@@ -156,8 +157,8 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
             best_score = 0.0
             for wrench in wrenches:
                 f1, f2 = wrench_to_contact_forces(wrench, pos1, pos2)
-                grip = 0.1 * (pos1 - pos2) / g.width
-                contacts = [(pos1, f1 - grip / 2), (pos2, f2 + grip / 2)]
+                grip = 0.1 * (g.c1.pos - g.c2.pos) / g.width
+                contacts = [(g.c1.pos, f1 - grip / 2), (g.c2.pos, f2 + grip / 2)]
                 graph = self.builder.build(msh, y0, contacts).to(self.device)
                 y_pred = self.model(self.normalizer.normalize(graph))
                 y_pred = self.normalizer.denormalize_y(y_pred)
@@ -171,4 +172,5 @@ class GNNBasedGraspOptimizer(GraspOptimizer):
                     Grasp(g.pose, g.width, g.c1, g.c2, best_wrench),
                 )
             )
+
         return sorted(grasps, key=lambda x: x[0], reverse=True)

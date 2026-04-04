@@ -21,10 +21,10 @@ class RvizMeshPublisher(Node):
         marker.type = Marker.MESH_RESOURCE
         marker.action = Marker.ADD
 
-        marker.mesh_resource = "package://rviz_mesh_publisher/meshes/Bushing3.stl"
+        marker.mesh_resource = "package://rviz_mesh_publisher/meshes/L-Bracket4.stl"
 
         # Set position and orientation
-        marker.pose.position.x = -0.3
+        marker.pose.position.x = -0.15
         marker.pose.position.y = 0.0
         marker.pose.position.z = 0.0
         marker.pose.orientation.w = 1.0
